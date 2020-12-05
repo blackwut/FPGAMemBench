@@ -9,16 +9,13 @@
 #include <limits>
 
 #include "opencl.hpp"
+#include "options.hpp"
 
 using namespace std;
 
 #define AOCL_ALIGNMENT  64
 #define DATA_TYPE       cl_float
-
 #define FLT_EPSILON     std::numeric_limits<float>::epsilon()
-#define ITERATIONS      128
-const vector<cl_int> batch_size = {64, 256, 1024, 4096, 16384, (1 << 16)};
-const size_t mem_size = batch_size.back() * sizeof(DATA_TYPE);
 
 
 #define KERNELS_FILENAME        "membench.cl"
@@ -30,15 +27,16 @@ const size_t mem_size = batch_size.back() * sizeof(DATA_TYPE);
 #define K_WRITER_RANGE_NAME     "writer_range"
 
 
-struct OCL {
+struct OCL
+{
     cl_platform_id platform;
     cl_device_id device;
     cl_context context;
     cl_program program;
 
-    void init(const std::string filename) {
-        platform = clPromptPlatform();
-        device = clPromptDevice(platform);
+    void init(const std::string filename, int platformid = -1, int deviceid = -1) {
+        platform = (platformid < 0) ? clPromptPlatform() : clSelectPlatform(platformid);
+        device = (deviceid < 0) ? clPromptDevice(platform) : clSelectDevice(platform, deviceid);
         context = clCreateContextFor(platform, device);
         program = clCreateBuildProgramFromBinary(context, device, filename);
     }
@@ -170,13 +168,52 @@ void check_computation(const DATA_TYPE * src, const DATA_TYPE * dst, int n)
 double get_time_events(const cl_event * events, int n) {
     double avg = 0.0;
     for (int i = 0; i < n; ++i) {
-        avg += clTimeEventMS(events[i]);
+        avg += clTimeEventNS(events[i]);
     }
     return avg;
 }
 
+void print_results(int iterations, int size,
+                   cl_event * event_reader,
+                   cl_event * event_compute,
+                   cl_event * event_writer)
+{
+    double t_reader  = get_time_events(event_reader, iterations);
+    double t_compute = get_time_events(event_compute, iterations);
+    double t_writer  = get_time_events(event_writer, iterations);
 
-void test_single(OCL & ocl, cl_int n)
+    double tavg_reader  = t_reader  / iterations;
+    double tavg_compute = t_compute / iterations;
+    double tavg_writer  = t_writer  / iterations;
+
+    size_t total_bytes = iterations * size * sizeof(DATA_TYPE);
+    double bw_reader  = total_bytes / t_reader;
+    double bw_compute = total_bytes / t_compute;
+    double bw_writer  = total_bytes / t_writer;
+
+    cout << "   Iterations: " << iterations                    << "\n"
+         << "   Batch size: " << size                          << "\n"
+         << "  Total items: " << iterations * size             << "\n"
+         << " Total Memory: " << (total_bytes * 2) / (1 << 20) << " MB\n"
+         << "\n";
+
+    cout << right << fixed  << setprecision(4)
+         << "┌──────────────────┬────────────┬────────────┬────────────┐\n"
+         << "│                  │   reader   │  compute   │   writer   │\n"
+         << "├──────────────────┼────────────┼────────────┼────────────┤\n"
+         << "│ Total Time  (ms) │ " << setw(10) << t_reader     * 1.0e-6 << " │ "
+                                    << setw(10) << t_compute    * 1.0e-6 << " │ "
+                                    << setw(10) << t_writer     * 1.0e-6 << " │\n"
+         << "│   Avg Time  (ms) │ " << setw(10) << tavg_reader  * 1.0e-6 << " │ "
+                                    << setw(10) << tavg_compute * 1.0e-6 << " │ "
+                                    << setw(10) << tavg_writer  * 1.0e-6 << " │\n"
+         << "│ Bandwidth (GB/s) │ " << setw(10) << bw_reader             << " │ "
+                                    << setw(10) << bw_compute            << " │ "
+                                    << setw(10) << bw_writer             << " │\n"
+         << "└──────────────────┴────────────┴────────────┴────────────┘\n";
+}
+
+void test_single(OCL & ocl, int iterations, int size)
 {
     cl_int argi;
     const size_t gws[3] = {1, 1, 1};
@@ -188,9 +225,9 @@ void test_single(OCL & ocl, cl_int n)
     queues[2] = ocl.createCommandQueue();
 
     clBufferShared<float> src(ocl.context, queues[0],
-                              mem_size, CL_MEM_READ_ONLY);
+                              size * sizeof(DATA_TYPE), CL_MEM_READ_ONLY);
     clBufferShared<float> dst(ocl.context, queues[2],
-                              mem_size, CL_MEM_WRITE_ONLY);
+                              size * sizeof(DATA_TYPE), CL_MEM_WRITE_ONLY);
 
     cl_event event_map[2];
     src.map(CL_MAP_WRITE, &event_map[0]);
@@ -208,20 +245,20 @@ void test_single(OCL & ocl, cl_int n)
 
     argi = 0;
     clCheckError(clSetKernelArg(kernels[0], argi++, sizeof(src.buffer), &src.buffer));
-    clCheckError(clSetKernelArg(kernels[0], argi++, sizeof(n), &n));
+    clCheckError(clSetKernelArg(kernels[0], argi++, sizeof(size), &size));
     argi = 0;
-    clCheckError(clSetKernelArg(kernels[1], argi++, sizeof(n), &n));
+    clCheckError(clSetKernelArg(kernels[1], argi++, sizeof(size), &size));
     argi = 0;
     clCheckError(clSetKernelArg(kernels[2], argi++, sizeof(dst.buffer), &dst.buffer));
-    clCheckError(clSetKernelArg(kernels[2], argi++, sizeof(n), &n));
+    clCheckError(clSetKernelArg(kernels[2], argi++, sizeof(size), &size));
 
 
-    cl_event event_reader[ITERATIONS];
-    cl_event event_compute[ITERATIONS];
-    cl_event event_writer[ITERATIONS];
+    cl_event * event_reader  = (cl_event *)malloc(sizeof(cl_event) * iterations);
+    cl_event * event_compute = (cl_event *)malloc(sizeof(cl_event) * iterations);
+    cl_event * event_writer = (cl_event *)malloc(sizeof(cl_event) * iterations);
 
-    for (int i = 0; i < ITERATIONS; ++i) {
-        random_fill(src.ptr, n);
+    for (int i = 0; i < iterations; ++i) {
+        random_fill(src.ptr, size);
 
         clCheckError(clEnqueueNDRangeKernel(queues[0], kernels[0],
                                             1, NULL, gws, lws,
@@ -234,80 +271,30 @@ void test_single(OCL & ocl, cl_int n)
                                             0, NULL, &event_writer[i]));
 
         clFinish(queues[2]);
-        check_computation(src.ptr, dst.ptr, n);
+        check_computation(src.ptr, dst.ptr, size);
     }
 
-    double t_reader  = get_time_events(event_reader, ITERATIONS);
-    double t_compute = get_time_events(event_compute, ITERATIONS);
-    double t_writer  = get_time_events(event_writer, ITERATIONS);
+    print_results(iterations, size, event_reader, event_compute, event_writer);
 
-    double tavg_reader  = t_reader  / ITERATIONS;
-    double tavg_compute = t_compute / ITERATIONS;
-    double tavg_writer  = t_writer  / ITERATIONS;
-
-    size_t total_bytes = ITERATIONS * n * sizeof(DATA_TYPE);
-    double bw_reader  = (total_bytes / 1.0e6) / t_reader;
-    double bw_compute = (total_bytes * 2 / 1.0e6) / t_compute;
-    double bw_writer  = (total_bytes / 1.0e6) / t_writer;
-
-    cout << "   Iterations: " << ITERATIONS << "\n"
-         << "   Batch size: " << n << "\n"
-         << "  Total items: " << n * ITERATIONS << "\n"
-         << " Total Memory: " << (total_bytes * 2) / (1 << 20) << " MB\n"
-         << "\n";
-
-    cout << right << fixed  << setprecision(4)
-         << "┌──────────────────┬──────────┬──────────┬──────────┐\n"
-         << "│                  │  reader  │ compute  │  writer  │\n"
-         << "├──────────────────┼──────────┼──────────┼──────────┤\n"
-         << "│       Total Time │ " << setw(8) << t_reader  << " │ " << setw(8) << t_compute  << " │ " << setw(8) << t_writer  << " │\n"
-         << "│         Avg Time │ " << setw(8) << tavg_reader  << " │ " << setw(8) << tavg_compute  << " │ " << setw(8) << tavg_writer  << " │\n"
-         << "│ Bandwidth (GB/s) │ " << setw(8) << bw_reader << " │ " << setw(8) << bw_compute << " │ " << setw(8) << bw_writer << " │\n"
-         << "└──────────────────┴──────────┴──────────┴──────────┘\n";
+    free(event_reader);
+    free(event_compute);
+    free(event_writer);
 
     src.free();
     dst.free();
-
     for (int i = 0; i < 3; ++i) if (kernels[i]) clReleaseKernel(kernels[i]);
     for (int i = 0; i < 3; ++i) if (queues[i]) clReleaseCommandQueue(queues[i]);
 }
 
 int main(int argc, char * argv[])
 {
+    Options opt;
+    opt.process_args(argc, argv);
+
     OCL ocl;
-    ocl.init(argv[1]);
+    ocl.init(opt.aocx_filename, opt.platform, opt.device);
 
-    cout << mem_size << endl;
-    test_single(ocl, batch_size.back());
-
-    // TODO: warmup buffers
-
-    // // clEnequeueWriteBuffer()
-    // for (const auto bs : batch_size) {
-
-    // }
-
-    // // clEnqueueMapBuffer()
-    // for (const auto bs : batch_size) {
-
-    // }
-
-    // double time_execution = 1.e-9 * (end_execution - start_execution);
-    // double time_fastflow = pipe.ffTime();
-    // double throughput = (stream_size * batch_size) / time_execution;
-    
-    // std::cout.precision(4);
-    // std::cout << "    Time Execution: " << std::fixed << time_execution << " s\n";
-    // std::cout << "          FastFlow: " << std::fixed << time_fastflow << " ms\n";
-    // std::cout << "        Throughput: " << (int)throughput << " tuples/second\n";
-    // std::cout << "\n";
-    // std::cout << "********* Kernels *********\n";
-    // std::cout << "             write: " << std::fixed << getTotalTimeEvents(events_write)     << " ms\n";
-    // std::cout << "         generator: " << std::fixed << getTotalTimeEvents(events_generator) << " ms\n";
-    // std::cout << "              sink: " << std::fixed << getTotalTimeEvents(events_sink)      << " ms\n";
-    // std::cout << "              read: " << std::fixed << getTotalTimeEvents(events_read)      << " ms\n";
-    // std::cout << "average_calculator: " << std::fixed << clTimeEventMS(event_avg_calculator)  << " ms\n";
-    // std::cout << "          detector: " << std::fixed << clTimeEventMS(event_detector)        << " ms\n";
+    test_single(ocl, opt.iterations, opt.size);
 
     ocl.clean();
 
