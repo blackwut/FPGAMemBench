@@ -14,6 +14,11 @@ struct Options
     int device;
     int iterations;
     int size;
+    bool task;
+    bool range;
+    bool buffer;
+    bool shared;
+    bool check_results;
 
     Options()
     : aocx_filename("./membench.aocx")
@@ -21,16 +26,26 @@ struct Options
     , device(0)
     , iterations(32)
     , size(1024)
+    , task(false)
+    , range(false)
+    , buffer(false)
+    , shared(false)
+    , check_results(false)
     {}
 
     void print_help()
     {
-        cout << "-a  --aocx            Specify the path of the .aocx file   \n"
-                "-p  --platform        Specify the OpenCL platform index    \n"
-                "-d  --device          Specify the OpenCL device index      \n"
-                "-i  --iterations      Set the number of iterations         \n"
-                "-s  --size            Set the number of items per iteration\n"
-                "-h  --help            Show this help message and exit      \n";
+        cout << "\t-a  --aocx            Specify the path of the .aocx file     \n"
+                "\t-p  --platform        Specify the OpenCL platform index      \n"
+                "\t-d  --device          Specify the OpenCL device index        \n"
+                "\t-i  --iterations      Set the number of iterations           \n"
+                "\t-n  --size            Set the number of items per iteration  \n"
+                "\t-t  --task            Benchmark clEnqueueTask().             \n"
+                "\t-r  --range           Benchmark clEnqueueNDRangeKernel()     \n"
+                "\t-b  --buffer          Benchmark clEnqueue[Read/Write]Buffer()\n"
+                "\t-s  --shared          Benchmark clEnqueue[Map/Unmap]Buffer() \n"
+                "\t-c  --check           Check results of computation           \n"
+                "\t-h  --help            Show this help message and exit        \n";
         exit(1);
     }
 
@@ -38,13 +53,18 @@ struct Options
     {
         opterr = 0;
 
-        const char * const short_opts = "a:p:d:i:s:h";
+        const char * const short_opts = "a:p:d:i:n:trbsch";
         const option long_opts[] = {
                 {"aocx",       optional_argument, nullptr, 'a'},
                 {"platform",   optional_argument, nullptr, 'p'},
                 {"device",     optional_argument, nullptr, 'd'},
                 {"iterations", optional_argument, nullptr, 'i'},
-                {"size",       optional_argument, nullptr, 's'},
+                {"size",       optional_argument, nullptr, 'n'},
+                {"task",       optional_argument, nullptr, 't'},
+                {"range",      optional_argument, nullptr, 'r'},
+                {"buffer",     optional_argument, nullptr, 'b'},
+                {"shared",     optional_argument, nullptr, 's'},
+                {"check",      optional_argument, nullptr, 'c'},
                 {"help",       no_argument,       nullptr, 'h'},
                 {nullptr,      no_argument,       nullptr,   0}
         };
@@ -81,12 +101,27 @@ struct Options
                     }
                     iterations = int_opt;
                     break;
-                case 's':
+                case 'n':
                     if ((int_opt = atoi(optarg)) < 0) {
                         cerr << "Please enter a valid number of items per iteration" << endl;
                         exit(1);
                     }
                     size = int_opt;
+                    break;
+                case 't':
+                    task = true;
+                    break;
+                case 'r':
+                    range = true;
+                    break;
+                case 'b':
+                    buffer = true;
+                    break;
+                case 's':
+                    shared = true;
+                    break;
+                case 'c':
+                    check_results = true;
                     break;
                 case 'h':
                 case '?':
@@ -94,6 +129,16 @@ struct Options
                     print_help();
                     break;
             }
+        }
+
+        if (!task and !range) {
+            cerr << "Please specify at least one of `--task` and `--range`!\n";
+            return;
+        }
+
+        if (!buffer and !shared) {
+            cerr << "Please specify at least one of `--buffer` and `--shared`!\n";
+            return;
         }
     }
 };

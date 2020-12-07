@@ -7,6 +7,7 @@
 channel DATA_TYPE c_reader_compute_s __attribute__((depth(CHANNEL_DEPTH)));
 channel DATA_TYPE c_compute_writer_s __attribute__((depth(CHANNEL_DEPTH)));
 
+__attribute__((max_global_work_dim(0)))
 __kernel
 void reader_single(__global const DATA_TYPE * restrict data, const int n)
 {
@@ -16,6 +17,7 @@ void reader_single(__global const DATA_TYPE * restrict data, const int n)
     }
 }
 
+__attribute__((max_global_work_dim(0)))
 __kernel
 void compute_single(const int n)
 {
@@ -26,6 +28,7 @@ void compute_single(const int n)
     }
 }
 
+__attribute__((max_global_work_dim(0)))
 __kernel
 void writer_single(__global DATA_TYPE * restrict data, const int n)
 {
@@ -39,6 +42,8 @@ void writer_single(__global DATA_TYPE * restrict data, const int n)
 channel DATA_TYPE c_reader_compute_r __attribute__((depth(CHANNEL_DEPTH)));
 channel DATA_TYPE c_compute_writer_r __attribute__((depth(CHANNEL_DEPTH)));
 
+__attribute__((uses_global_work_offset(0)))
+__attribute__((reqd_work_group_size(8,1,1)))
 __kernel
 void reader_range(__global const DATA_TYPE * restrict data, const int n)
 {
@@ -48,6 +53,8 @@ void reader_range(__global const DATA_TYPE * restrict data, const int n)
     write_channel_intel(c_reader_compute_r, val);
 }
 
+__attribute__((uses_global_work_offset(0)))
+__attribute__((reqd_work_group_size(8,1,1)))
 __kernel
 void compute_range(const int n)
 {
@@ -58,6 +65,8 @@ void compute_range(const int n)
     write_channel_intel(c_compute_writer_r, val);
 }
 
+__attribute__((uses_global_work_offset(0)))
+__attribute__((reqd_work_group_size(8,1,1)))
 __kernel
 void writer_range(__global DATA_TYPE * restrict data, const int n)
 {

@@ -1,5 +1,4 @@
-#ifndef BW_UTILS_OPENCL_H
-#define BW_UTILS_OPENCL_H
+#pragma once
 
 #include <iostream>
 #include <fstream>
@@ -374,5 +373,3 @@ double clTimeEventMS(cl_event event)
 {
     return clTimeBetweenEventsMS(event, event);
 }
-
-#endif
