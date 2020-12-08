@@ -63,8 +63,8 @@ void print_results(int iterations, int size,
                    cl_ulong t_reader,
                    cl_ulong t_compute,
                    cl_ulong t_writer,
-                   cl_ulong t_read = 0,
-                   cl_ulong t_write = 0)
+                   cl_ulong t_read,
+                   cl_ulong t_write)
 {
     // All timings are in nanoseconds but printed in milliseconds
     cl_ulong t_host     = (t_end - t_start);
@@ -74,12 +74,12 @@ void print_results(int iterations, int size,
     double tavg_read    = t_read    / (double)iterations;
     double tavg_write   = t_write   / (double)iterations;
 
-    size_t total_bytes = iterations * size * sizeof(float);
-    double bw_reader  = total_bytes / (double)t_reader;
-    double bw_compute = total_bytes / (double)t_compute;
-    double bw_writer  = total_bytes / (double)t_writer;
-    double bw_read    = total_bytes / (double)t_read;
-    double bw_write   = total_bytes / (double)t_write;
+    size_t total_bytes  = iterations * size * sizeof(float);
+    double bw_reader    = total_bytes / (double)t_reader;
+    double bw_compute   = total_bytes / (double)t_compute * 2;
+    double bw_writer    = total_bytes / (double)t_writer;
+    double bw_read      = total_bytes / (double)t_read;
+    double bw_write     = total_bytes / (double)t_write;
 
     cout << right << fixed  << setprecision(4)
          << "Total time Host (ms): " << setw(10) << t_host * 1.0e-6 << "\n"
@@ -151,7 +151,6 @@ void benchmark(OCL & ocl,
 
     // Kernels
     cl_kernel kernels[3];
-
     if (kernel_type == clKernelType::Task) {
         kernels[0] = ocl.createKernel(K_READER_SINGLE_NAME);
         kernels[1] = ocl.createKernel(K_COMPUTE_SINGLE_NAME);
@@ -177,10 +176,11 @@ void benchmark(OCL & ocl,
     size_t lws[3] = {1, 1, 1};
     if (kernel_type == clKernelType::NDRange) {
         gws[0] = size;
-        lws[0] = 8;
+        lws[0] = 16;
     }
 
-    cl_ulong timings[5] = {0, 0, 0, 0, 0}; // 0-2 kernel times, 3 read time, 4 write time
+    // 0-2 kernel times, 3 read time, 4 write time
+    cl_ulong timings[5] = {0, 0, 0, 0, 0};
     cl_ulong time_start = current_time_ns();
 
     for (int i = 0; i < iterations; ++i) {
@@ -190,10 +190,10 @@ void benchmark(OCL & ocl,
             random_fill(src->ptr, size);
             src->write(&events[4]);
         } else { // clMemoryType::Shared
-            const uint64_t t_write_start = current_time_ns();
+            // const uint64_t t_write_start = current_time_ns();
             random_fill(src->ptr, size);
-            const uint64_t t_write_end = current_time_ns();
-            timings[4] = t_write_end - t_write_start;
+            // const uint64_t t_write_end = current_time_ns();
+            // timings[4] = t_write_end - t_write_start;
         }
 
         for (int i = 0; i < 3; ++i) {
@@ -209,18 +209,17 @@ void benchmark(OCL & ocl,
         for (int i = 0; i < 3; ++i) clReleaseEvent(events[i]);
 
         if (mem_type == clMemoryType::Buffer) {
-
             timings[3] = clTimeEventNS(events[3]);
             timings[4] = clTimeEventNS(events[4]);
             clReleaseEvent(events[3]);
             clReleaseEvent(events[4]);
-
-        } else {
-            uint64_t t_read_start = current_time_ns();
-            if (check_results) check_computation(src->ptr, dst->ptr, size);
-            uint64_t t_read_end = current_time_ns();
-            timings[3] = t_read_end - t_read_start;
+        } else { // clMemoryType::Shared
+            // uint64_t t_read_start = current_time_ns();
+            // if (check_results) check_computation(src->ptr, dst->ptr, size);
+            // uint64_t t_read_end = current_time_ns();
+            // timings[3] = t_read_end - t_read_start;
         }
+        if (check_results) check_computation(src->ptr, dst->ptr, size);
     }
     for (int i = 0; i < 3; ++i) clFinish(queues[i]);
     cl_ulong time_end = current_time_ns();
@@ -248,8 +247,6 @@ int main(int argc, char * argv[])
 
     OCL ocl;
     ocl.init(opt.aocx_filename, opt.platform, opt.device);
-
-    cout << "sizeof(cl_ulong) = " << sizeof(cl_ulong) << endl;
 
     double mem_batch = opt.size * sizeof(float) / (double)(1 << 20);
     double mem_total = opt.iterations * mem_batch;

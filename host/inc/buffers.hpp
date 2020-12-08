@@ -107,8 +107,7 @@ struct clMemBuffer : clMemory<T>
     }
 
     void map(cl_map_flags flags, cl_event * event = NULL, bool blocking = true) override
-    {
-    }
+    {}
 
     void read(cl_event * event = NULL, bool blocking = true) override
     {
