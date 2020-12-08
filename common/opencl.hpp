@@ -349,6 +349,23 @@ cl_program clCreateBuildProgramFromSource(cl_context context, cl_device_id devic
     return program;
 }
 
+void clWriteAutorunKernelProfilingData(cl_device_id device, cl_program program)
+{
+    cl_int status = clGetProfileDataDeviceIntelFPGA(device,     // device_id
+                                                    program,    // program
+                                                    CL_TRUE,    // read_enqueue_kernels
+                                                    CL_TRUE,    // read_auto_enqueued
+                                                    CL_TRUE,    // clear_counters_after_readback
+                                                    0,          // param_value_size
+                                                    NULL,       // param_value
+                                                    NULL,       // param_value_size_ret
+                                                    NULL);      // errcode_ret
+    // cl_int (*get_profile_fn)(cl_device_id, cl_program, cl_bool,cl_bool,cl_bool,size_t, void *,size_t *,cl_int *);
+    // get_profile_fn = (cl_int (*) (cl_device_id, cl_program, cl_bool,cl_bool,cl_bool,size_t, void *,size_t *,cl_int *))clGetExtensionFunctionAddress("clGetProfileDataDeviceIntelFPGA");
+    // cl_int status = (cl_int)(*get_profile_fn) (device, program, false, true, true, 0, NULL, NULL,  NULL);
+    clCheckErrorMsg(status, "Failed to write Autorun Kernels profiling data");
+}
+
 cl_ulong clTimeBetweenEventsNS(cl_event start, cl_event end)
 {
     cl_ulong timeStart;
