@@ -209,8 +209,8 @@ void benchmark(OCL & ocl,
         for (int i = 0; i < 3; ++i) clReleaseEvent(events[i]);
 
         if (mem_type == clMemoryType::Buffer) {
-            timings[3] = clTimeEventNS(events[3]);
-            timings[4] = clTimeEventNS(events[4]);
+            timings[3] += clTimeEventNS(events[3]);
+            timings[4] += clTimeEventNS(events[4]);
             clReleaseEvent(events[3]);
             clReleaseEvent(events[4]);
         } else { // clMemoryType::Shared
@@ -249,7 +249,7 @@ int main(int argc, char * argv[])
     ocl.init(opt.aocx_filename, opt.platform, opt.device);
 
     double mem_batch = opt.size * sizeof(float) / (double)(1 << 20);
-    double mem_total = opt.iterations * mem_batch;
+    double mem_total = 2 * opt.iterations * mem_batch;
     cout << fixed << setprecision(3)
          << "   Iterations: " << opt.iterations            << "\n"
          << "  Batch Items: " << opt.size                  << " items\n"
