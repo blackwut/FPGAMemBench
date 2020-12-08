@@ -202,7 +202,7 @@ void benchmark(OCL & ocl,
                                                 0, NULL, &events[i]));
         }
 
-       if (mem_type == clMemoryType::Buffer) dst->read(&events[3]);
+        if (mem_type == clMemoryType::Buffer) dst->read(&events[3]);
 
         for (int i = 0; i < 3; ++i) clFinish(queues[i]);
         for (int i = 0; i < 3; ++i) timings[i] += clTimeEventNS(events[i]);
@@ -240,6 +240,129 @@ void benchmark(OCL & ocl,
     for (int i = 0; i < 3; ++i) if (queues[i]) clReleaseCommandQueue(queues[i]);
 }
 
+void benchmark_autorun(OCL & ocl,
+                       int iterations,
+                       int size,
+                       clMemoryType mem_type,
+                       bool check_results = false)
+{
+
+    cout << "Benchmark with Autorun Kernel using "
+         << (mem_type == clMemoryType::Buffer ? "clMemBuffer" : "clMemShared")
+         << " memory type\n";
+
+
+     // Queues
+    cl_command_queue queues[2];
+    queues[0] = ocl.createCommandQueue();
+    queues[1] = ocl.createCommandQueue();
+
+
+     // Buffers
+    clMemory<float> * src;
+    clMemory<float> * dst;
+
+    if (mem_type == clMemoryType::Buffer) {
+        src = new clMemBuffer<float>(ocl.context, queues[0], size, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY);
+        dst = new clMemBuffer<float>(ocl.context, queues[1], size, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY);
+    } else { // clMemoryType::Shared
+        src = new clMemShared<float>(ocl.context, queues[0], size, CL_MEM_READ_ONLY);
+        dst = new clMemShared<float>(ocl.context, queues[1], size, CL_MEM_WRITE_ONLY);
+        
+        cl_event event_map[2];
+        src->map(CL_MAP_WRITE, &event_map[0]);
+        dst->map(CL_MAP_READ, &event_map[1]);
+
+        cout << "src->map(): " << clTimeEventMS(event_map[0]) << " ms\n"
+             << "dst->map(): " << clTimeEventMS(event_map[1]) << " ms\n";
+
+        clReleaseEvent(event_map[0]);
+        clReleaseEvent(event_map[1]);
+    }
+
+
+    // Kernels
+    cl_kernel kernels[2];
+    kernels[0] = ocl.createKernel(K_READER_AUTORUN_NAME);
+    kernels[1] = ocl.createKernel(K_WRITER_AUTORUN_NAME);
+
+    cl_int argi = 0;
+    clCheckError(clSetKernelArg(kernels[0], argi++, sizeof(src->buffer), &src->buffer));
+    clCheckError(clSetKernelArg(kernels[0], argi++, sizeof(size), &size));
+    argi = 0;
+    clCheckError(clSetKernelArg(kernels[1], argi++, sizeof(dst->buffer), &dst->buffer));
+    clCheckError(clSetKernelArg(kernels[1], argi++, sizeof(size), &size));
+
+
+    // Benchmark
+    size_t gws[3] = {1, 1, 1};
+    size_t lws[3] = {1, 1, 1};
+
+    // 0-2 kernel times, 3 read time, 4 write time
+    cl_ulong timings[5] = {0, 0, 0, 0, 0};
+    cl_ulong time_start = current_time_ns();
+
+    for (int i = 0; i < iterations; ++i) {
+        cl_event events[5];
+
+        if (mem_type == clMemoryType::Buffer) {
+            random_fill(src->ptr, size);
+            src->write(&events[4]);
+        } else { // clMemoryType::Shared
+            // const uint64_t t_write_start = current_time_ns();
+            random_fill(src->ptr, size);
+            // const uint64_t t_write_end = current_time_ns();
+            // timings[4] = t_write_end - t_write_start;
+        }
+
+        // clEnableProfilingAutorunKernels(ocl.device, ocl.program);
+        for (int i = 0; i < 2; ++i) {
+            clCheckError(clEnqueueNDRangeKernel(queues[i], kernels[i],
+                                                1, NULL, gws, lws,
+                                                0, NULL, &events[i]));
+        }
+        clWriteAutorunKernelProfilingData(ocl.device, ocl.program);
+
+
+        if (mem_type == clMemoryType::Buffer) dst->read(&events[3]);
+
+        for (int i = 0; i < 2; ++i) clFinish(queues[i]);
+        for (int i = 0; i < 2; ++i) timings[i] += clTimeEventNS(events[i]);
+        for (int i = 0; i < 2; ++i) clReleaseEvent(events[i]);
+
+        if (mem_type == clMemoryType::Buffer) {
+            timings[3] += clTimeEventNS(events[3]);
+            timings[4] += clTimeEventNS(events[4]);
+            clReleaseEvent(events[3]);
+            clReleaseEvent(events[4]);
+        } else { // clMemoryType::Shared
+            // uint64_t t_read_start = current_time_ns();
+            // if (check_results) check_computation(src->ptr, dst->ptr, size);
+            // uint64_t t_read_end = current_time_ns();
+            // timings[3] = t_read_end - t_read_start;
+        }
+        if (check_results) check_computation(src->ptr, dst->ptr, size);
+    }
+    for (int i = 0; i < 2; ++i) clFinish(queues[i]);
+    cl_ulong time_end = current_time_ns();
+
+    print_results(iterations, size, time_start, time_end,
+                  timings[0], 0, timings[1],
+                  timings[3], timings[4]);
+
+
+    // Releases
+    src->release();
+    dst->release();
+
+    delete src;
+    delete dst;
+
+    for (int i = 0; i < 2; ++i) if (kernels[i]) clReleaseKernel(kernels[i]);
+    for (int i = 0; i < 2; ++i) if (queues[i]) clReleaseCommandQueue(queues[i]);
+}
+
+
 int main(int argc, char * argv[])
 {
     Options opt;
@@ -275,6 +398,15 @@ int main(int argc, char * argv[])
         if (opt.shared) benchmark(ocl, opt.iterations, opt.size,
                                   clKernelType::NDRange, clMemoryType::Shared,
                                   opt.check_results);
+    }
+
+    if (opt.autorun) {
+        if (opt.buffer) benchmark_autorun(ocl, opt.iterations, opt.size,
+                                          clMemoryType::Buffer,
+                                          opt.check_results);
+        if (opt.shared) benchmark_autorun(ocl, opt.iterations, opt.size,
+                                          clMemoryType::Shared,
+                                          opt.check_results);
     }
 
     ocl.clean();

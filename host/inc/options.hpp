@@ -16,6 +16,7 @@ struct Options
     int size;
     bool task;
     bool range;
+    bool autorun;
     bool buffer;
     bool shared;
     bool check_results;
@@ -35,13 +36,14 @@ struct Options
 
     void print_help()
     {
-        cout << "\t-a  --aocx            Specify the path of the .aocx file     \n"
+        cout << "\t-f  --aocx            Specify the path of the .aocx file     \n"
                 "\t-p  --platform        Specify the OpenCL platform index      \n"
                 "\t-d  --device          Specify the OpenCL device index        \n"
                 "\t-i  --iterations      Set the number of iterations           \n"
                 "\t-n  --size            Set the number of items per iteration  \n"
                 "\t-t  --task            Benchmark clEnqueueTask().             \n"
                 "\t-r  --range           Benchmark clEnqueueNDRangeKernel()     \n"
+                "\t-a  --autorun         Benchmark Autorun kenrel               \n"
                 "\t-b  --buffer          Benchmark clEnqueue[Read/Write]Buffer()\n"
                 "\t-s  --shared          Benchmark clEnqueue[Map/Unmap]Buffer() \n"
                 "\t-c  --check           Check results of computation           \n"
@@ -53,9 +55,9 @@ struct Options
     {
         opterr = 0;
 
-        const char * const short_opts = "a:p:d:i:n:trbsch";
+        const char * const short_opts = "f:p:d:i:n:trabsch";
         const option long_opts[] = {
-                {"aocx",       optional_argument, nullptr, 'a'},
+                {"aocx",       optional_argument, nullptr, 'f'},
                 {"platform",   optional_argument, nullptr, 'p'},
                 {"device",     optional_argument, nullptr, 'd'},
                 {"iterations", optional_argument, nullptr, 'i'},
@@ -77,7 +79,7 @@ struct Options
             if (opt < 0) break;
 
             switch (opt) {
-                case 'a':
+                case 'f':
                     aocx_filename = string(optarg);
                     break;
                 case 'p':
@@ -114,6 +116,9 @@ struct Options
                 case 'r':
                     range = true;
                     break;
+                case 'a':
+                    autorun = true;
+                    break;
                 case 'b':
                     buffer = true;
                     break;
@@ -131,8 +136,8 @@ struct Options
             }
         }
 
-        if (!task and !range) {
-            cerr << "Please specify at least one of `--task` and `--range`!\n";
+        if (!task and !range and !autorun) {
+            cerr << "Please specify at least one of `--task`, `--range` and `--autorun`!\n";
             return;
         }
 
