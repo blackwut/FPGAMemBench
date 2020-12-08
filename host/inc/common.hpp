@@ -11,12 +11,16 @@
 #define K_READER_RANGE_NAME     "reader_range"
 #define K_COMPUTE_RANGE_NAME    "compute_range"
 #define K_WRITER_RANGE_NAME     "writer_range"
+#define K_READER_AUTORUN_NAME     "reader_autorun"
+#define K_COMPUTE_AUTORUN_NAME    "compute_autorun"
+#define K_WRITER_AUTORUN_NAME     "writer_autorun"
 
 
 enum clKernelType
 {
     Task,
-    NDRange
+    NDRange,
+    Autorun
 };
 
 enum clMemoryType
