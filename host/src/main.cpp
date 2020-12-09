@@ -67,7 +67,8 @@ void print_results(int iterations, int size,
                    cl_ulong t_write)
 {
     // All timings are in nanoseconds but printed in milliseconds
-    cl_ulong t_host     = (t_end - t_start);
+    double t_host       = (t_end - t_start);
+    double tavg_host    = t_host    / (double)iterations;
     double tavg_reader  = t_reader  / (double)iterations;
     double tavg_compute = t_compute / (double)iterations;
     double tavg_writer  = t_writer  / (double)iterations;
@@ -75,6 +76,7 @@ void print_results(int iterations, int size,
     double tavg_write   = t_write   / (double)iterations;
 
     size_t total_bytes  = iterations * size * sizeof(float);
+    double bw_host      = total_bytes / (double)t_host * 2;
     double bw_reader    = total_bytes / (double)t_reader;
     double bw_compute   = total_bytes / (double)t_compute * 2;
     double bw_writer    = total_bytes / (double)t_writer;
@@ -82,26 +84,28 @@ void print_results(int iterations, int size,
     double bw_write     = total_bytes / (double)t_write;
 
     cout << right << fixed  << setprecision(4)
-         << "Total time Host (ms): " << setw(10) << t_host * 1.0e-6 << "\n"
-         << "┌──────────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐\n"
-         << "│                  │   reader   │  compute   │   writer   │    read    │   write    │\n"
-         << "├──────────────────┼────────────┼────────────┼────────────┼────────────┼────────────┤\n"
-         << "│  Total Time (ms) │ " << setw(10) << t_reader     * 1.0e-6 << " │ "
+         << "┌──────────────────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐\n"
+         << "│                  │    host    │   reader   │  compute   │   writer   │    read    │   write    │\n"
+         << "├──────────────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────────┤\n"
+         << "│  Total Time (ms) │ " << setw(10) << t_host       * 1.0e-6 << " │ "
+                                    << setw(10) << t_reader     * 1.0e-6 << " │ "
                                     << setw(10) << t_compute    * 1.0e-6 << " │ "
                                     << setw(10) << t_writer     * 1.0e-6 << " │ "
                                     << setw(10) << t_read       * 1.0e-6 << " │ "
                                     << setw(10) << t_write      * 1.0e-6 << " │\n"
-         << "│    Avg Time (ms) │ " << setw(10) << tavg_reader  * 1.0e-6 << " │ "
+         << "│    Avg Time (ms) │ " << setw(10) << tavg_host    * 1.0e-6 << " │ "
+                                    << setw(10) << tavg_reader  * 1.0e-6 << " │ "
                                     << setw(10) << tavg_compute * 1.0e-6 << " │ "
                                     << setw(10) << tavg_writer  * 1.0e-6 << " │ "
                                     << setw(10) << tavg_read    * 1.0e-6 << " │ "
                                     << setw(10) << tavg_write   * 1.0e-6 << " │\n"
-         << "│ Bandwidth (GB/s) │ " << setw(10) << bw_reader             << " │ "
+         << "│ Bandwidth (GB/s) │ " << setw(10) << bw_host               << " │ "
+                                    << setw(10) << bw_reader             << " │ "
                                     << setw(10) << bw_compute            << " │ "
                                     << setw(10) << bw_writer             << " │ "
                                     << setw(10) << bw_read               << " │ "
                                     << setw(10) << bw_write              << " │\n"
-         << "└──────────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘\n\n";
+         << "└──────────────────┴────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘\n\n";
 }
 
 void benchmark(OCL & ocl,
@@ -112,12 +116,12 @@ void benchmark(OCL & ocl,
                bool check_results = false)
 {
 
-    cout << "Benchmark with "
+    cout << "Kernel type: "
          << (kernel_type == clKernelType::Task ? "clEnqueueTask()" : "clEnqueueNDRangeKernel()")
-         << " using "
+         << "\n"
+         << "Memory type: "
          << (mem_type == clMemoryType::Buffer ? "clMemBuffer" : "clMemShared")
-         << " memory type\n";
-
+         << "\n";
 
      // Queues
     cl_command_queue queues[3];
@@ -141,8 +145,8 @@ void benchmark(OCL & ocl,
         src->map(CL_MAP_WRITE, &event_map[0]);
         dst->map(CL_MAP_READ, &event_map[1]);
 
-        cout << "src->map(): " << clTimeEventMS(event_map[0]) << " ms\n"
-             << "dst->map(): " << clTimeEventMS(event_map[1]) << " ms\n";
+        // cout << "src->map(): " << clTimeEventMS(event_map[0]) << " ms\n"
+        //      << "dst->map(): " << clTimeEventMS(event_map[1]) << " ms\n";
 
         clReleaseEvent(event_map[0]);
         clReleaseEvent(event_map[1]);
@@ -247,9 +251,11 @@ void benchmark_autorun(OCL & ocl,
                        bool check_results = false)
 {
 
-    cout << "Benchmark with Autorun Kernel using "
+    cout << "Kernel type: AutorunKernel"
+         << "\n"
+         << "Memory type: "
          << (mem_type == clMemoryType::Buffer ? "clMemBuffer" : "clMemShared")
-         << " memory type\n";
+         << "\n";
 
 
      // Queues
@@ -273,8 +279,8 @@ void benchmark_autorun(OCL & ocl,
         src->map(CL_MAP_WRITE, &event_map[0]);
         dst->map(CL_MAP_READ, &event_map[1]);
 
-        cout << "src->map(): " << clTimeEventMS(event_map[0]) << " ms\n"
-             << "dst->map(): " << clTimeEventMS(event_map[1]) << " ms\n";
+        // cout << "src->map(): " << clTimeEventMS(event_map[0]) << " ms\n"
+        //      << "dst->map(): " << clTimeEventMS(event_map[1]) << " ms\n";
 
         clReleaseEvent(event_map[0]);
         clReleaseEvent(event_map[1]);
@@ -367,6 +373,11 @@ int main(int argc, char * argv[])
 {
     Options opt;
     opt.process_args(argc, argv);
+
+    if (opt.autorun and (opt.size % 4 > 0)) {
+        opt.size = ((opt.size + 3) / 4) * 4;
+        cout << "Size is rounded to a multiple of 4: " << opt.size << "\n";
+    }
 
     OCL ocl;
     ocl.init(opt.aocx_filename, opt.platform, opt.device);

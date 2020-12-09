@@ -78,17 +78,22 @@ void writer_range(__global DATA_TYPE * restrict data, const int n)
 }
 
 // Autorun
+#define DATA_TYPE_VEC float4
 #define N_COMPUTE_UNITS 4
 channel DATA_TYPE c_reader_compute_a[N_COMPUTE_UNITS] __attribute__((depth(CHANNEL_DEPTH)));
 channel DATA_TYPE c_compute_writer_a[N_COMPUTE_UNITS] __attribute__((depth(CHANNEL_DEPTH)));
 
 __attribute__((max_global_work_dim(0)))
 __kernel
-void reader_autorun(__global const DATA_TYPE * restrict data, const int n)
+void reader_autorun(__global const DATA_TYPE_VEC * restrict data, int n)
 {
+    n = n /4;
     for (int i = 0; i < n; ++i) {
-        const DATA_TYPE val = data[i];
-        write_channel_intel(c_reader_compute_a[i % N_COMPUTE_UNITS], val);
+        const DATA_TYPE_VEC val = data[i];
+        write_channel_intel(c_reader_compute_a[0], val.s0);
+        write_channel_intel(c_reader_compute_a[1], val.s1);
+        write_channel_intel(c_reader_compute_a[2], val.s2);
+        write_channel_intel(c_reader_compute_a[3], val.s3);
     }
 }
 
@@ -101,18 +106,41 @@ void compute_autorun()
     const int cid = get_compute_id(0);
 
     while (1) {
-        DATA_TYPE val = read_channel_intel(c_reader_compute_a[cid]);
+
+        DATA_TYPE val;
+
+        // Read from channel
+        switch (cid) {
+            case 0: val = read_channel_intel(c_reader_compute_a[0]); break;
+            case 1: val = read_channel_intel(c_reader_compute_a[1]); break;
+            case 2: val = read_channel_intel(c_reader_compute_a[2]); break;
+            case 3: val = read_channel_intel(c_reader_compute_a[3]); break;
+        }
+
+        // Computation
         val = val * val;
-        write_channel_intel(c_compute_writer_a[cid], val);
+
+        // Write to channel
+        switch (cid) {
+            case 0: write_channel_intel(c_compute_writer_a[0], val); break;
+            case 1: write_channel_intel(c_compute_writer_a[1], val); break;
+            case 2: write_channel_intel(c_compute_writer_a[2], val); break;
+            case 3: write_channel_intel(c_compute_writer_a[3], val); break;
+        }
     }
 }
 
 __attribute__((max_global_work_dim(0)))
 __kernel
-void writer_autorun(__global DATA_TYPE * restrict data, const int n)
+void writer_autorun(__global DATA_TYPE_VEC * restrict data, int n)
 {
+    n = n / 4;
     for (int i = 0; i < n; ++i) {
-        const DATA_TYPE val = read_channel_intel(c_compute_writer_a[i % N_COMPUTE_UNITS]);
+        DATA_TYPE_VEC val;
+        val.s0 = read_channel_intel(c_compute_writer_a[0]);
+        val.s1 = read_channel_intel(c_compute_writer_a[1]);
+        val.s2 = read_channel_intel(c_compute_writer_a[2]);
+        val.s3 = read_channel_intel(c_compute_writer_a[3]);
         data[i] = val;
     }
 }
